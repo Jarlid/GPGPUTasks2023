@@ -98,7 +98,7 @@ int main() {
     // И хорошо бы сразу добавить в конце clReleaseContext (да, не очень RAII, но это лишь пример)
 
     cl_int errcodeRet;
-    
+
     cl_context context = clCreateContext(nullptr, 1, &finalDevice, nullptr, nullptr, &errcodeRet);
     OCL_SAFE_CALL(errcodeRet);
 
@@ -129,6 +129,13 @@ int main() {
     // или же через метод Buffer Objects -> clEnqueueWriteBuffer
     // И хорошо бы сразу добавить в конце clReleaseMemObject (аналогично, все дальнейшие ресурсы вроде OpenCL под-программы, кернела и т.п. тоже нужно освобождать)
 
+    cl_mem bufferA = clCreateBuffer(context, CL_MEM_READ_ONLY + CL_MEM_COPY_HOST_PTR, sizeof(float) * n, as.data(), &errcodeRet);
+    OCL_SAFE_CALL(errcodeRet);
+    cl_mem bufferB = clCreateBuffer(context, CL_MEM_READ_ONLY + CL_MEM_COPY_HOST_PTR, sizeof(float) * n, bs.data(), &errcodeRet);
+    OCL_SAFE_CALL(errcodeRet);
+    cl_mem bufferC = clCreateBuffer(context, CL_MEM_WRITE_ONLY + CL_MEM_COPY_HOST_PTR, sizeof(float) * n, cs.data(), &errcodeRet);
+    OCL_SAFE_CALL(errcodeRet);
+
     // TODO 6 Выполните TODO 5 (реализуйте кернел в src/cl/aplusb.cl)
     // затем убедитесь, что выходит загрузить его с диска (убедитесь что Working directory выставлена правильно - см. описание задания),
     // напечатав исходники в консоль (if проверяет, что удалось считать хоть что-то)
@@ -146,18 +153,30 @@ int main() {
     // см. Runtime APIs -> Program Objects -> clCreateProgramWithSource
     // у string есть метод c_str(), но обратите внимание, что передать вам нужно указатель на указатель
 
+    auto data = kernel_sources.c_str();
+    auto dataSize = kernel_sources.size();
+
+    cl_program program = clCreateProgramWithSource(context, 1, &data, &dataSize, &errcodeRet);
+    OCL_SAFE_CALL(errcodeRet);
+
     // TODO 8 Теперь скомпилируйте программу и напечатайте в консоль лог компиляции
     // см. clBuildProgram
+    OCL_SAFE_CALL(clBuildProgram(program, 1, &finalDevice, nullptr, nullptr, nullptr));
 
     // А также напечатайте лог компиляции (он будет очень полезен, если в кернеле есть синтаксические ошибки - т.е. когда clBuildProgram вернет CL_BUILD_PROGRAM_FAILURE)
     // Обратите внимание, что при компиляции на процессоре через Intel OpenCL драйвер - в логе указывается, какой ширины векторизацию получилось выполнить для кернела
     // см. clGetProgramBuildInfo
-    //    size_t log_size = 0;
-    //    std::vector<char> log(log_size, 0);
-    //    if (log_size > 1) {
-    //        std::cout << "Log:" << std::endl;
-    //        std::cout << log.data() << std::endl;
-    //    }
+
+    size_t log_size = 0;
+    OCL_SAFE_CALL(clGetProgramBuildInfo(program, finalDevice, CL_PROGRAM_BUILD_LOG, 0, nullptr, &log_size));
+
+    std::vector<char> log(log_size, 0);
+    OCL_SAFE_CALL(clGetProgramBuildInfo(program, finalDevice, CL_PROGRAM_BUILD_LOG, log_size, log.data(), nullptr));
+
+    if (log_size > 1) {
+        std::cout << "Log:" << std::endl;
+        std::cout << log.data() << std::endl << std::endl;
+    }
 
     // TODO 9 Создайте OpenCL-kernel в созданной подпрограмме (в одной подпрограмме может быть несколько кернелов, но в данном случае кернел один)
     // см. подходящую функцию в Runtime APIs -> Program Objects -> Kernel Objects
@@ -228,6 +247,12 @@ int main() {
     //            throw std::runtime_error("CPU and GPU results differ!");
     //        }
     //    }
+
+    OCL_SAFE_CALL(clReleaseProgram(program));
+
+    OCL_SAFE_CALL(clReleaseMemObject(bufferA));
+    OCL_SAFE_CALL(clReleaseMemObject(bufferB));
+    OCL_SAFE_CALL(clReleaseMemObject(bufferC));
 
     OCL_SAFE_CALL(clReleaseCommandQueue(commandQueue));
     OCL_SAFE_CALL(clReleaseContext(context));
