@@ -40,16 +40,75 @@ int main() {
     // TODO 1 По аналогии с предыдущим заданием узнайте, какие есть устройства, и выберите из них какое-нибудь
     // (если в списке устройств есть хоть одна видеокарта - выберите ее, если нету - выбирайте процессор)
 
+    cl_uint platformsCount = 0;
+    OCL_SAFE_CALL(clGetPlatformIDs(0, nullptr, &platformsCount));
+
+    std::vector<cl_platform_id> platforms(platformsCount);
+    OCL_SAFE_CALL(clGetPlatformIDs(platformsCount, platforms.data(), nullptr));
+
+    bool foundGPU = false, foundCPU = false;
+    cl_device_id finalDevice;
+
+    for (cl_uint platformIndex = 0; platformIndex < platformsCount; ++platformIndex) {
+        cl_platform_id platform = platforms[platformIndex];
+
+        cl_uint devicesCount = 0;
+        OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 0, nullptr, &devicesCount));
+
+        std::vector<cl_device_id> devices(devicesCount);
+        OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, devicesCount, devices.data(), nullptr));
+
+        for (int deviceIndex = 0; deviceIndex < devicesCount; ++deviceIndex) {
+            cl_device_id device = devices[deviceIndex];
+
+            cl_device_type deviceType;
+            OCL_SAFE_CALL(clGetDeviceInfo(device, CL_DEVICE_TYPE, sizeof deviceType, &deviceType, nullptr));
+
+            if (deviceType == CL_DEVICE_TYPE_GPU) {
+                foundGPU = true;
+                finalDevice = device;
+                break;
+            }
+
+            if (!foundCPU && deviceType == CL_DEVICE_TYPE_CPU) {
+                foundCPU = true;
+                finalDevice = device;
+            }
+        }
+
+        if (foundGPU)
+            break;
+    }
+
+    if (!foundGPU && !foundCPU) {
+        std::cout << "No suitable devices." << std::endl;
+        exit(1);
+    }
+
+    size_t deviceNameSize = 0;
+    OCL_SAFE_CALL(clGetDeviceInfo(finalDevice, CL_DEVICE_NAME, 0, nullptr, &deviceNameSize));
+    std::vector<unsigned char> deviceName(deviceNameSize, 0);
+    OCL_SAFE_CALL(clGetDeviceInfo(finalDevice, CL_DEVICE_NAME, deviceNameSize, deviceName.data(), &deviceNameSize));
+    std::cout << "Device: " << deviceName.data() << std::endl << std::endl;
+
     // TODO 2 Создайте контекст с выбранным устройством
     // См. документацию https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/ -> OpenCL Runtime -> Contexts -> clCreateContext
     // Не забывайте проверять все возвращаемые коды на успешность (обратите внимание, что в данном случае метод возвращает
     // код по переданному аргументом errcode_ret указателю)
     // И хорошо бы сразу добавить в конце clReleaseContext (да, не очень RAII, но это лишь пример)
 
+    cl_int errcodeRet;
+    
+    cl_context context = clCreateContext(nullptr, 1, &finalDevice, nullptr, nullptr, &errcodeRet);
+    OCL_SAFE_CALL(errcodeRet);
+
     // TODO 3 Создайте очередь выполняемых команд в рамках выбранного контекста и устройства
     // См. документацию https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/ -> OpenCL Runtime -> Runtime APIs -> Command Queues -> clCreateCommandQueue
     // Убедитесь, что в соответствии с документацией вы создали in-order очередь задач
     // И хорошо бы сразу добавить в конце clReleaseQueue (не забывайте освобождать ресурсы)
+
+    cl_command_queue commandQueue = clCreateCommandQueue(context, finalDevice, 0, &errcodeRet);
+    OCL_SAFE_CALL(errcodeRet);
 
     unsigned int n = 1000 * 1000;
     // Создаем два массива псевдослучайных данных для сложения и массив для будущего хранения результата
@@ -169,6 +228,9 @@ int main() {
     //            throw std::runtime_error("CPU and GPU results differ!");
     //        }
     //    }
+
+    OCL_SAFE_CALL(clReleaseCommandQueue(commandQueue));
+    OCL_SAFE_CALL(clReleaseContext(context));
 
     return 0;
 }
