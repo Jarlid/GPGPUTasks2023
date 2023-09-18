@@ -129,11 +129,17 @@ int main() {
     // или же через метод Buffer Objects -> clEnqueueWriteBuffer
     // И хорошо бы сразу добавить в конце clReleaseMemObject (аналогично, все дальнейшие ресурсы вроде OpenCL под-программы, кернела и т.п. тоже нужно освобождать)
 
-    cl_mem bufferA = clCreateBuffer(context, CL_MEM_READ_ONLY + CL_MEM_COPY_HOST_PTR, sizeof(float) * n, as.data(), &errcodeRet);
+    auto flags = CL_MEM_READ_ONLY;
+    if (foundGPU)
+        flags |= CL_MEM_COPY_HOST_PTR;
+    else
+        flags |= CL_MEM_USE_HOST_PTR;
+
+    cl_mem bufferA = clCreateBuffer(context, flags, sizeof(float) * n, as.data(), &errcodeRet);
     OCL_SAFE_CALL(errcodeRet);
-    cl_mem bufferB = clCreateBuffer(context, CL_MEM_READ_ONLY + CL_MEM_COPY_HOST_PTR, sizeof(float) * n, bs.data(), &errcodeRet);
+    cl_mem bufferB = clCreateBuffer(context, flags, sizeof(float) * n, bs.data(), &errcodeRet);
     OCL_SAFE_CALL(errcodeRet);
-    cl_mem bufferC = clCreateBuffer(context, CL_MEM_WRITE_ONLY + CL_MEM_COPY_HOST_PTR, sizeof(float) * n, cs.data(), &errcodeRet);
+    cl_mem bufferC = clCreateBuffer(context, flags, sizeof(float) * n, cs.data(), &errcodeRet);
     OCL_SAFE_CALL(errcodeRet);
 
     // TODO 6 Выполните TODO 5 (реализуйте кернел в src/cl/aplusb.cl)
@@ -211,6 +217,7 @@ int main() {
             cl_event event;
             OCL_SAFE_CALL(clEnqueueNDRangeKernel(commandQueue, kernel, 1, nullptr, &global_work_size, &workGroupSize, 0, nullptr, &event));
             OCL_SAFE_CALL(clWaitForEvents(1, &event));
+            OCL_SAFE_CALL(clReleaseEvent(event));
             t.nextLap();// При вызове nextLap секундомер запоминает текущий замер (текущий круг) и начинает замерять время следующего круга
         }
         // Среднее время круга (вычисления кернела) на самом деле считается не по всем замерам, а лишь с 20%-перцентайля по 80%-перцентайль (как и стандартное отклонение)
@@ -230,7 +237,7 @@ int main() {
         // - Всего элементов в массивах по n штук
         // - Размер каждого элемента sizeof(float)=4 байта
         // - Обращений к видеопамяти 2*n*sizeof(float) байт на чтение и 1*n*sizeof(float) байт на запись, т.е. итого 3*n*sizeof(float) байт
-        // - В гигабайте 1024*1024*1024 байт (actually, this is a lie)
+        // - В гигабайте 1024*1024*1024 байт (the cake is a lie)
         // - Среднее время выполнения кернела равно t.lapAvg() секунд
         std::cout << "VRAM bandwidth: " << (double) 3 * n * sizeof(float) / t.lapAvg() / (1024 * 1024 * 1024) << " GB/s" << std::endl;
     }
@@ -253,6 +260,7 @@ int main() {
         }
     }
 
+    OCL_SAFE_CALL(clReleaseKernel(kernel));
     OCL_SAFE_CALL(clReleaseProgram(program));
 
     OCL_SAFE_CALL(clReleaseMemObject(bufferA));
