@@ -2,6 +2,11 @@
 #include <libutils/timer.h>
 #include <libutils/fast_random.h>
 
+#include "libgpu/context.h"
+#include "libgpu/shared_device_buffer.h"
+
+#include "cl/sum_cl.h"
+
 
 template<typename T>
 void raiseFail(const T &a, const T &b, std::string message, std::string filename, int line)
@@ -59,6 +64,42 @@ int main(int argc, char **argv)
 
     {
         // TODO: implement on OpenCL
-        // gpu::Device device = gpu::chooseGPUDevice(argc, argv);
+        gpu::Device device = gpu::chooseGPUDevice(argc, argv);
+        gpu::Context context;
+        context.init(device.device_id_opencl);
+        context.activate();
+
+        gpu::gpu_mem_32u as_gpu, sum_gpu;
+        as_gpu.resizeN(n);
+        sum_gpu.resizeN(1);
+
+        as_gpu.writeN(as.data(), n);
+        unsigned int zero = 0, sum;
+
+        std::vector<std::pair<std::string, std::string>> modes = {
+                {"GPU atomic", "atomic_sum"}
+        };
+
+        for (const auto& mode : modes) {
+            ocl::Kernel kernel(sum_kernel, sum_kernel_length, mode.second);
+            kernel.compile();
+
+            unsigned int workGroupSize = 128;
+            unsigned int global_work_size = (n + workGroupSize - 1) / workGroupSize * workGroupSize;
+
+            timer t;
+            for (int iter = 0; iter < benchmarkingIters; ++iter) {
+                sum_gpu.writeN(&zero, 1);
+                kernel.exec(gpu::WorkSize(workGroupSize, global_work_size),
+                            sum_gpu, as_gpu, n);
+                sum_gpu.readN(&sum, 1);
+
+                EXPECT_THE_SAME(reference_sum, sum, mode.first + " result should be consistent!");
+                t.nextLap();
+            }
+
+            std::cout << mode.first << ": " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
+            std::cout << mode.first << ": " << (n/1000.0/1000.0) / t.lapAvg() << " millions/s" << std::endl;
+        }
     }
 }
