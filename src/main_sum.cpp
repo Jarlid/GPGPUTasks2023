@@ -7,6 +7,8 @@
 
 #include "cl/sum_cl.h"
 
+#define VALUES_PER_WORKITEM 64
+
 
 template<typename T>
 void raiseFail(const T &a, const T &b, std::string message, std::string filename, int line)
@@ -76,16 +78,24 @@ int main(int argc, char **argv)
         as_gpu.writeN(as.data(), n);
         unsigned int zero = 0, sum;
 
-        std::vector<std::pair<std::string, std::string>> modes = {
-                {"GPU atomic", "atomic_sum"}
+        std::vector<std::tuple<std::string, std::string, unsigned int>> modes = {
+                {"GPU atomic", "atomic_sum", n},
+                {"GPU loop", "loop_sum", (n + VALUES_PER_WORKITEM - 1) / VALUES_PER_WORKITEM},
+                {"GPU coalesced loop", "coalesced_loop_sum", (n + VALUES_PER_WORKITEM - 1) / VALUES_PER_WORKITEM},
+                {"GPU local memory", "local_memory_sum", n},
+                {"GPU tree", "tree_sum", n}
         };
 
         for (const auto& mode : modes) {
-            ocl::Kernel kernel(sum_kernel, sum_kernel_length, mode.second);
+            std::string print_name, kernel_name;
+            unsigned int local_n;
+            std::tie(print_name, kernel_name, local_n) = mode;
+
+            ocl::Kernel kernel(sum_kernel, sum_kernel_length, kernel_name);
             kernel.compile();
 
             unsigned int workGroupSize = 128;
-            unsigned int global_work_size = (n + workGroupSize - 1) / workGroupSize * workGroupSize;
+            unsigned int global_work_size = (local_n + workGroupSize - 1) / workGroupSize * workGroupSize;
 
             timer t;
             for (int iter = 0; iter < benchmarkingIters; ++iter) {
@@ -94,12 +104,12 @@ int main(int argc, char **argv)
                             sum_gpu, as_gpu, n);
                 sum_gpu.readN(&sum, 1);
 
-                EXPECT_THE_SAME(reference_sum, sum, mode.first + " result should be consistent!");
+                EXPECT_THE_SAME(reference_sum, sum, print_name + " result should be consistent!");
                 t.nextLap();
             }
 
-            std::cout << mode.first << ": " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
-            std::cout << mode.first << ": " << (n/1000.0/1000.0) / t.lapAvg() << " millions/s" << std::endl;
+            std::cout << print_name << ": " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
+            std::cout << print_name << ": " << (n/1000.0/1000.0) / t.lapAvg() << " millions/s" << std::endl;
         }
     }
 }
