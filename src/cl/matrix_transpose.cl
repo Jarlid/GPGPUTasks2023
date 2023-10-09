@@ -14,9 +14,12 @@ __kernel void matrix_transpose(__global const float* as, __global float* as_t, u
     const unsigned int gid_j = get_global_id(1);
 
     __local float tile[TILE_SIZE][TILE_SIZE];
-    tile[lid_i][lid_j] = as[gid_j * K + gid_i];
+    tile[lid_j][lid_i] = as[gid_j * K + gid_i];
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    as_t[gid_i * M + gid_j] = tile[lid_i][lid_j];
+    const unsigned int wid_i = get_group_id(0);
+    const unsigned int wid_j = get_group_id(1);
+
+    as_t[(wid_i * TILE_SIZE + lid_j) * M + (wid_j * TILE_SIZE) + lid_i] = tile[lid_i][lid_j];
 }
