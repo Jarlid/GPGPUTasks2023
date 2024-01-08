@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
     context.activate();
 
     int benchmarkingIters = 1; // TODO: 10
-    unsigned int n = 3 * 1024; // TODO: 32 * 1024 * 1024
+    unsigned int n = 32 * 1024 * 1024; // TODO: 32 * 1024 * 1024
     std::vector<unsigned int> as(n, 0);
     FastRandom r(n);
     for (unsigned int i = 0; i < n; ++i) {
@@ -58,9 +58,7 @@ int main(int argc, char **argv) {
     unsigned int workGroupSize = 128;
     unsigned int global_work_size = (n + workGroupSize - 1) / workGroupSize * workGroupSize;
 
-    unsigned int M = global_work_size / workGroupSize, K = OFFSET_VARIANTS; // TODO: возможно, необходимо поменять местами.
-    // Но пока что K - ширина изначальной таблицы.
-    std::cout << M << " " << K << std::endl;
+    unsigned int M = global_work_size / workGroupSize, K = OFFSET_VARIANTS;
 
     unsigned int transpose_work_group_size = OFFSET_VARIANTS;
     unsigned int transpose_global_work_size_x = (K + transpose_work_group_size - 1) / transpose_work_group_size * transpose_work_group_size;
@@ -90,17 +88,13 @@ int main(int argc, char **argv) {
         ocl::Kernel radix_reconstruct(radix_kernel, radix_kernel_length, "radix_reconstruct");
         radix_reconstruct.compile();
 
-        // TODO: delete.
-        std::vector<unsigned int> counter_table(M * K, 0);
-        std::vector<unsigned int> t_counter_table(M * K, 0);
-
         timer t;
         for (int iter = 0; iter < benchmarkingIters; ++iter) {
             as_gpu.writeN(as.data(), n);
 
             t.restart(); // Запускаем секундомер после прогрузки данных, чтобы замерять время работы кернела, а не трансфер данных
 
-            for (int offset = 0; offset < 1; offset += OFFSET_SIZE) { // TODO: max offset.
+            for (int offset = 0; offset < 32; offset += OFFSET_SIZE) {
 
                 // Сортировка значений в небольших блоках с помощью mergesort.
                 for (unsigned int merge_chunk_size = 1; merge_chunk_size < workGroupSize; merge_chunk_size *= 2) {
@@ -110,15 +104,9 @@ int main(int argc, char **argv) {
 
                 counter.exec(gpu::WorkSize(workGroupSize, global_work_size), as_gpu, counter_table_gpu, offset);
 
-                std::cout << transpose_work_group_size << " " << transpose_global_work_size_x << " " << transpose_global_work_size_y << std::endl;
-
                 transpose.exec(gpu::WorkSize(transpose_work_group_size, transpose_work_group_size,
                                              transpose_global_work_size_x, transpose_global_work_size_y),
                                counter_table_gpu, t_counter_table_gpu, M, K);
-
-                // TODO: delete.
-                counter_table_gpu.readN(counter_table.data(), M * K);
-                t_counter_table_gpu.readN(t_counter_table.data(), M * K);
 
                 // Делает из счётчика индикатор количества до.
                 for (unsigned int chunk_size = 1; chunk_size < K * M; chunk_size *= 2)
@@ -139,23 +127,6 @@ int main(int argc, char **argv) {
         std::cout << "GPU: " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
 
         as_gpu.readN(as.data(), n);
-
-        // TODO: delete.
-        for (int m = 0; m < M; ++m) {
-            for (int k = 0; k < K; ++k) {
-                std::cout << counter_table[m * K + k] << " ";
-            }
-            std::cout << std::endl;
-        }
-
-        std::cout << std::endl;
-
-        for (int k = 0; k < K; ++k) {
-            for (int m = 0; m < M; ++m) {
-                std::cout << t_counter_table[k * M + m] << " ";
-            }
-            std::cout << std::endl;
-        }
     }
 
     // Проверяем корректность результатов

@@ -104,14 +104,17 @@ __kernel void matrix_transpose(__global const unsigned int* as, __global unsigne
     const unsigned int gid_j = get_global_id(1);
 
     __local unsigned int tile[TILE_SIZE][TILE_SIZE];
-    tile[lid_j][lid_i] = as[gid_j * K + gid_i];
+    if (gid_j < M && gid_i < K)
+        tile[lid_j][lid_i] = as[gid_j * K + gid_i];
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
     const unsigned int wid_i = get_group_id(0);
     const unsigned int wid_j = get_group_id(1);
 
-    as_t[(wid_i * TILE_SIZE + lid_j) * M + (wid_j * TILE_SIZE) + lid_i] = tile[lid_i][lid_j];
+    const unsigned int index = (wid_i * TILE_SIZE + lid_j) * M + wid_j * TILE_SIZE + lid_i;
+    if ((wid_i * TILE_SIZE + lid_j) < K && wid_j * TILE_SIZE + lid_i < M)
+        as_t[index] = tile[lid_i][lid_j];
 }
 
 // Высчитывание префиксных сумм:
