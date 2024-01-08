@@ -24,6 +24,20 @@ float lazycos(float angle)
     return 1.0;
 }
 
+// exponential smooth min (k=32)
+float smin( float a, float b, float k )
+{
+    float res = exp2( -k*a ) + exp2( -k*b );
+    return -log2( res )/k;
+}
+
+float sdCapsule( vec3 p, vec3 a, vec3 b, float r )
+{
+  vec3 pa = p - a, ba = b - a;
+  float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+  return length( pa - ba*h ) - r;
+}
+
 // возможно, для конструирования тела пригодятся какие-то примитивы из набора https://iquilezles.org/articles/distfunctions/
 // способ сделать гладкий переход между примитивами: https://iquilezles.org/articles/smin/
 vec4 sdBody(vec3 p)
@@ -32,7 +46,21 @@ vec4 sdBody(vec3 p)
 
     // TODO
     d = sdSphere((p - vec3(0.0, 0.35, -0.7)), 0.35);
-    
+
+    float head = sdSphere(p - vec3(0.0, 0.6, -0.7), 0.2);
+    d = smin(d, head, 30.0); // + 0.05 * fbm(p, .125);
+
+    float tumor = sdSphere(p - vec3(0.1, 0.4, -0.72), 0.3 + 0.02 * sin(0.5 * iTime));
+    d = smin(d, tumor, 30.0);
+
+    float antenna = sdCapsule(p, vec3(0.0, 0.35, -0.7), vec3(0.0 + 0.1 * lazycos(20. * iTime), 0.97, -0.7 + 0.1 * lazycos(iTime)), 0.01);
+    d = smin(d, antenna, 30.0);
+
+    float leg = sdCapsule(p, vec3(0.0, 0.35, -0.7), vec3(0.1, -0.2, -0.7 - 0.2 * sin(2. * iTime)), 0.05);
+    d = smin(d, leg, 100.0);
+    leg = sdCapsule(p, vec3(0.0, 0.35, -0.7), vec3(-0.1, -0.2, -0.7 + 0.2 * sin(2. * iTime)), 0.05);
+    d = smin(d, leg, 100.0);
+
     // return distance and color
     return vec4(d, vec3(0.0, 1.0, 0.0));
 }
@@ -40,8 +68,18 @@ vec4 sdBody(vec3 p)
 vec4 sdEye(vec3 p)
 {
 
-    vec4 res = vec4(1e10, 0.0, 0.0, 0.0);
-    
+    // vec4 res = vec4(1e10, 0.0, 0.0, 0.0);
+
+    vec4 res = vec4(sdSphere((p - vec3(0.0, 0.45, -0.55)), 0.25), vec3(1.0));
+
+    vec4 blue = vec4(sdSphere((p - vec3(0.0, 0.45, -0.42)), 0.15), vec3(0.0, 0.0, 1.0));
+    if (blue.x < res.x)
+        res = blue;
+
+    vec4 black = vec4(sdSphere((p - vec3(0.0, 0.45, -0.35)), 0.10), vec3(0.0));
+    if (black.x < res.x)
+        res = black;
+
     return res;
 }
 
@@ -49,7 +87,7 @@ vec4 sdMonster(vec3 p)
 {
     // при рисовании сложного объекта из нескольких SDF, удобно на верхнем уровне 
     // модифицировать p, чтобы двигать объект как целое
-    p -= vec3(0.0, 0.08, 0.0);
+    p -= vec3(0.0, 0.25, 0.0);
     
     vec4 res = sdBody(p);
     
